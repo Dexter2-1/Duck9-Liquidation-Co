@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  WAREHOUSE
+}
+
+enum Condition {
+  LIKE_NEW
+  MINOR_SCRATCHES
+  HEAVY_WEAR
+  AS_IS
+}
+
+enum PalletStatus {
+  ACTIVE
+  HIDDEN
+  ON_TRUCK
+  SOLD
+  WRITTEN_OFF
+}
+
+model User {
+  id                String   @id @default(cuid())
+  name              String
+  email             String   @unique
+  password          String
+  role              Role
+  resetToken        String?  @unique
+  resetTokenExpiry  DateTime?
+  createdAt         DateTime @default(now())
+  activity          ActivityLog[]
+}
+
+model Pallet {
+  id              String       @id @default(cuid())
+  sku             String       @unique
+  title           String
+  category        String
+  weightLbs       Float
+  lengthIn        Float?
+  widthIn         Float?
+  heightIn        Float?
+  cost            Float
+  price           Float
+  compareAtPrice  Float?       // set higher than price to show a "Sale" badge + strikethrough on the storefront
+  floorPrice      Float
+  retailValue     Float?
+  itemsRange      String?      // e.g. "95-130 units", customer-facing estimate
+  location        String?      // customer-facing pickup/ship-from city, e.g. "Charlotte, NC"
+  imageUrl        String?      // primary photo shown on the storefront card, admin-uploaded
+  imagesJson      String?      // JSON array of additional photo URLs for the detail gallery
+  quantityAvailable Int        @default(1)
+  condition       Condition    @default(AS_IS)
+  status          PalletStatus @default(ACTIVE)
+  binLocation     String?      // internal warehouse aisle/rack, admin-only
+  description     String?
+  manifestJson    String?
+  supplier        String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  descHistory     DescriptionHistory[]
+  orderItems      OrderItem[]
+  reviews         Review[]
+  offers          Offer[]
+}
+
+model DescriptionTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  body      String
+  createdAt DateTime @default(now())
+}
+
+model DescriptionHistory {
+  id        String   @id @default(cuid())
+  palletId  String
+  pallet    Pallet   @relation(fields: [palletId], references: [id])
+  body      String
+  editedBy  String
+  createdAt DateTime @default(now())
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  orderNumber     String      @unique
+  customerName    String
+  customerEmail   String
+  customerPhone   String?
+  fulfillmentMode String      @default("delivery") // delivery | pickup
+  deliveryAddress String?
+  pickupWarehouse String?
+  subtotal        Float       @default(0)
+  discountAmount  Float       @default(0)
+  discountReason  String?     // e.g. "Manual payment discount" or "Wholesale buyer discount"
+  totalPrice      Float       @default(0)
+  paymentStatus   String      @default("UNPAID") // UNPAID | PAID
+  status          String      @default("PENDING") // PENDING, SHIPPED, CANCELLED
+  createdAt       DateTime    @default(now())
+  shippedAt       DateTime?
+  items           OrderItem[]
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String
+  order     Order  @relation(fields: [orderId], references: [id])
+  palletId  String
+  pallet    Pallet @relation(fields: [palletId], references: [id])
+  price     Float
+  quantity  Int    @default(1)
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  target    String
+  detail    String?
+  createdAt DateTime @default(now())
+}
+
+// A submitted review — either tied to a specific pallet (shows on that pallet's
+// detail page) or general (palletId null, shows in the sitewide testimonials
+// section). Held for admin approval before appearing publicly.
+model Review {
+  id         String   @id @default(cuid())
+  palletId   String?
+  pallet     Pallet?  @relation(fields: [palletId], references: [id])
+  authorName String
+  rating     Int      // 1-5
+  comment    String
+  approved   Boolean  @default(false)
+  featured   Boolean  @default(false) // featured reviews surface in the sitewide testimonials section
+  createdAt  DateTime @default(now())
+}
+
+// A "Make an Offer" submission from a customer on a specific pallet.
+model Offer {
+  id            String   @id @default(cuid())
+  palletId      String
+  pallet        Pallet   @relation(fields: [palletId], references: [id])
+  customerName  String
+  customerEmail String
+  customerPhone String?
+  offerPrice    Float
+  message       String?
+  status        String   @default("PENDING") // PENDING, ACCEPTED, DECLINED
+  createdAt     DateTime @default(now())
+}
+
+// Auto-created/updated whenever someone checks out, keyed by email. Lets the
+// admin flag repeat/wholesale buyers for an automatic discount on future orders.
+model Customer {
+  id                      String   @id @default(cuid())
+  email                   String   @unique
+  name                    String?
+  phone                   String?
+  wholesaleDiscountPercent Float   @default(0)
+  notes                   String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+// Singleton row (id always "main") holding editable site content:
+// company name, contact info, headquarters address, and warehouse list.
+model SiteSettings {
+  id                 String   @id @default("main")
+  companyName        String   @default("Dock9 Liquidation Co.")
+  tagline            String   @default("Fresh loads. Liquidation prices.")
+  supportEmail       String   @default("sales@dock9liquidation.example")
+  supportPhone       String   @default("(704) 555-0139")
+  hoursText          String   @default("Mon–Fri, 8am–5:30pm local dock time")
+  headquartersAddress String  @default("4400 Distribution Way, Charlotte, NC 28206")
+  warehousesJson     String   @default("[{\"label\":\"Charlotte, NC — Dock A\",\"address\":\"4400 Distribution Way, Charlotte, NC 28206\"},{\"label\":\"Dallas, TX — Dock C\",\"address\":\"1180 Freight Line Rd, Dallas, TX 75212\"},{\"label\":\"Reno, NV — Dock B\",\"address\":\"920 Warehouse Row, Reno, NV 89506\"}]")
+  adminNotificationEmail String @default("admin@dock9.example")
+  adminNotificationPhone String? // E.164 format, e.g. +17045550139 — enables SMS order alerts if set
+  paymentInstructions    String @default("We accept Zelle, Venmo, Chime, Apple Pay, and Cash App. Your load ships once payment is confirmed.")
+  paymentDiscountEnabled   Boolean @default(true)
+  paymentDiscountThreshold Float   @default(200)
+  paymentDiscountPercent   Float   @default(10)
+  shippingPolicy     String   @default("All pallets ship via freight carrier to a business address or loading dock, or are available for will-call pickup at any of our warehouses at no charge. Freight quotes are confirmed after checkout and before your payment is finalized. Most orders leave our dock within 3-5 business days of payment confirmation.")
+  refundsPolicy      String   @default("All pallet sales are final due to the liquidation nature of the inventory — item counts and contents are estimates based on the manifest, not itemized guarantees. Freight damage claims must be reported within 48 hours of delivery and are handled directly with the carrier.")
+  termsPolicy        String   @default("By placing an order you agree that pallets are sold as-is, that manifested item counts are estimates, and that payment is due via one of our accepted manual payment methods within 3 days of order confirmation unless other arrangements are made. We reserve the right to cancel unpaid reservations after this window.")
+  whatsappNumber     String?  // E.164 format e.g. +17045550139 — shows a floating "Chat on WhatsApp" button if set
+  announcementBarText String? // shown as a thin bar above the header if set, e.g. "Call or text us — bulk order? Ask about wire/deposit terms."
+  updatedAt          DateTime @updatedAt
+}
+
+// Email capture for "new arrivals & deals" signups on the storefront.
+model NewsletterSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+}

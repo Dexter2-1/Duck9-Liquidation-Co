@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { background: #F4F3F0; color: #17181A; }
+
+.card { @apply bg-white border border-gray-200 rounded-md; }
+.btn { @apply px-4 py-2 rounded-md text-sm font-semibold tracking-wide; }
+.btn-primary { @apply bg-ink text-white hover:bg-black; }
+.btn-yellow { @apply bg-yellow text-ink hover:brightness-95; }
+.btn-outline { @apply border border-gray-300 hover:border-ink; }
+.input { @apply w-full border border-gray-300 rounded-md px-3 py-2 text-sm; }
+.table-cell { @apply px-3 py-2 text-sm border-b border-gray-100; }
